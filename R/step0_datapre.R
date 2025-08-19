@@ -1,5 +1,6 @@
 # Load necessary libraries
 library(dplyr)
+library(forcats)
 library(tidyr)
 library(readxl)
 library(janitor)
@@ -257,5 +258,29 @@ df_select[is.na(df_select)] <- 0
 df_select <- df_select %>% select(-c('cpt:new'))
 df_select <- df_select %>%
   select(where(~ !(is.numeric(.) || is.logical(.)) || any(. != 0, na.rm = TRUE)))
+df_select <- df_select %>%
+  mutate(
+    smoke_raw = smokingstatus_around_surg %>%
+      str_to_lower() %>%
+      str_squish() %>%
+      str_replace_all("[^a-z ]", ""),
+    
+    smoke5 = case_when(
+      smoke_raw %in% c("passive smoke exposure  never smoker")          ~ "Passive",
+      smoke_raw %in% c("never", "never smoker")                         ~ "Never",
+      smoke_raw %in% c("former", "former smoker")                       ~ "Former",
+      smoke_raw %in% c("some days", "current some day smoker",
+                       "light tobacco smoker")                           ~ "Current (nondaily/light)",
+      smoke_raw %in% c("every day", "current every day smoker",
+                       "heavy tobacco smoker")                           ~ "Current (daily/heavy)",
+      smoke_raw %in% c("unknown", "never assessed")                      ~ "Unknown",
+      is.na(smoke_raw) | smoke_raw == ""                                 ~ "Unknown",
+      TRUE                                                               ~ "Unknown"
+    ),
+    smoke5 = fct_relevel(factor(smoke5),
+                         "Never","Passive","Former",
+                         "Current (nondaily/light)","Current (daily/heavy)","Unknown")
+  ) %>%
+  select(-smoke_raw)
 save(df_select, file = "DRcovariate.rds")
 

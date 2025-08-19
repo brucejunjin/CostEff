@@ -28,7 +28,7 @@ QC1     <- QC     %>% janitor::clean_names()
 MRN2PC1 <- MRN2PC %>% janitor::clean_names()    # expects: pc, mrn
 DRcov   <- DR2380 %>%
   janitor::clean_names() %>%
-  select(mrn, sex, bmi, smokingstatus_around_surg, cciscore, hosp_gap_days)
+  select(mrn, sex, bmi, smoke5, cciscore, hosp_gap_days)
 
 # Join QC (has QALY & cost) -> MRN2PC (pc->mrn) -> DRcov (covariates)
 dat <- QC1 %>%
@@ -60,7 +60,7 @@ dat <- dat %>%
     bmi      = suppressWarnings(as.numeric(bmi)),
     cci      = suppressWarnings(as.numeric(cciscore)),
     sex      = factor(sex),
-    smoke    = factor(smokingstatus_around_surg),
+    smoke    = factor(smoke5),
     los_days = suppressWarnings(as.numeric(hosp_gap_days))
   ) %>%
   # Keep rows we can analyze
@@ -177,3 +177,5 @@ print(results$adjusted_delta_qaly)
 print(results$adjusted_delta_cost)
 cat("ICER (HOPD vs ASC):", results$ICER, "\n")
 head(results$CEAC)
+
+save(results, file = 'results.rds')
