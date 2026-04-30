@@ -7,32 +7,80 @@ library(janitor)
 library(emmeans)
 library(boot)
 
-# load processed QALY and Cost file
-QC <- read_excel("../data/QALYs and Costs 3.17.25.xlsx", sheet = "Cost and QALYs")
-QC <- QC[,c("ASC or HOPD", "Patient Number (coded)", "Age at time of surgery",
-            "Total Costs", "Preop QALY", "Postop QALY")]
+# Load processed QALY and Cost file
+QC <- read_excel("../data/QALYs and Costs 3.26.26.xlsx", sheet = "Costs and QALYs")
 
-# load patient coding
-SNOT2QALY <- read_excel("../data/QALYs and Costs 3.17.25.xlsx", sheet = "SNOT22s to QALYs")
-MRN2PC <- SNOT2QALY[,c('Patient Number (coded)', 'mrn')]
-names(MRN2PC) <- c('PC', 'MRN')
-MRN2PC <- unique(MRN2PC)
+# Load Smitha SNOT22s sheet for MRN matching
+smitha <- read_excel("../data/QALYs and Costs 3.26.26.xlsx", sheet = "Smitha SNOT22s")
+
+# Create name-based MRN lookup
+smitha_lookup <- smitha %>%
+  mutate(
+    first_name_match = str_to_upper(str_squish(as.character(PAT_FIRST_NAME))),
+    last_name_match  = str_to_upper(str_squish(as.character(PAT_LAST_NAME))),
+    MRN = as.character(MRN)
+  ) %>%
+  distinct(first_name_match, last_name_match, MRN)
+
+# Optional: check whether any first-name/last-name combination maps to multiple MRNs
+duplicate_name_check <- smitha_lookup %>%
+  count(first_name_match, last_name_match, name = "n_mrn") %>%
+  filter(n_mrn > 1)
+
+if (nrow(duplicate_name_check) > 0) {
+  warning("Some first-name/last-name combinations match multiple MRNs. Please review duplicate_name_check.")
+}
+
+# Join MRN into QC by first name and last name
+QC <- QC %>%
+  mutate(
+    first_name_match = str_to_upper(str_squish(as.character(`Patient First name`))),
+    last_name_match  = str_to_upper(str_squish(as.character(`Patient Last Name`)))
+  ) %>%
+  left_join(
+    smitha_lookup,
+    by = c("first_name_match", "last_name_match")
+  ) %>%
+  select(
+    `ASC OR HOPD`,
+    MRN,
+    `Age at time of surgery`,
+    `Total Costs`,
+    `Preop QALY (=Preop HUV * 0.5 years)`,
+    `Postop QALY (=Postop HUV * 0.5 years)`
+  )
+
+# Rename columns
+names(QC) <- c(
+  "ASC or HOPD",
+  "mrn",
+  "Age at time of surgery",
+  "Total Costs",
+  "Preop QALY",
+  "Postop QALY"
+)
 
 # load covariates file
 load("DRcovariate.rds")
-DR2380 <- df_select
+DR4048 <- df_select
 
 ## ---- 1) Link tables ----
 # Clean column names so joins are easy
-QC1     <- QC     %>% janitor::clean_names()
-MRN2PC1 <- MRN2PC %>% janitor::clean_names()    # expects: pc, mrn
-DRcov   <- DR2380 %>%
+QC1 <- QC %>%
   janitor::clean_names() %>%
+  mutate(
+    mrn = str_trim(as.character(mrn))
+  )
+
+DRcov <- DR4048 %>%
+  janitor::clean_names() %>%
+  mutate(
+    mrn = str_trim(as.character(mrn))
+  ) %>%
   select(mrn, sex, bmi, smoke5, cciscore, hosp_gap_days)
 
-# Join QC (has QALY & cost) -> MRN2PC (pc->mrn) -> DRcov (covariates)
+# Join QC with DRcov by MRN
 dat <- QC1 %>%
-  left_join(MRN2PC1, by = c("patient_number_coded" = "pc")) %>%
   left_join(DRcov, by = "mrn")
 
 ## =========================
